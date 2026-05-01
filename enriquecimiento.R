@@ -1,10 +1,10 @@
 # ==============================================================================
-# enriquecimiento.R — Enriquecimiento del inventario con metadatos de TMDb
+# enriquecimiento.R — Enriquecimiento con TMDb (ES + EN)
 # Proyecto: Cinemateca
 #
-# Qué hace: Toma inventario_crudo.csv y consulta TMDb para obtener metadatos.
-#            Guarda una caché local (tmdb_cache.json) para no re-consultar
-#            películas ya procesadas. Genera catalogo.json y catalogo_enriquecido.csv.
+# Consulta TMDb en español e inglés para cada película.
+# Guarda caché local para no re-consultar. Deduplica por tmdb_id.
+# Usa paralelismo (furrr) para acelerar las consultas a la API.
 # ==============================================================================
 
 library(dplyr)
@@ -15,31 +15,31 @@ library(httr2)
 library(jsonlite)
 library(cli)
 library(stringi)
+library(furrr)      # install.packages("furrr") si no lo tienes
 
-# --- Ruta del proyecto --------------------------------------------------------
 proyecto <- path.expand("~/Desktop/Cinemateca")
 
-# --- Configuración de la API -------------------------------------------------
+# --- API config --------------------------------------------------------------
 tmdb_token <- "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiIyOGU5ZmQ0ZmY1Yjg1ZmEwZTUyMGQ0N2YyOGYwZTNlNSIsIm5iZiI6MTc3NzU5MzA2Ni45MjcsInN1YiI6IjY5ZjNlYWVhMmQ0OGU2MDk0NWY5Zjk3ZCIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.0M5J3xxbcGLOy2q2rcv5ibSy0WctOLhAp5kuMdeedmM"
-
 tmdb_base   <- "https://api.themoviedb.org/3"
 poster_base <- "https://image.tmdb.org/t/p/w500"
-pausa       <- 0.3
 
-# --- Caché local -------------------------------------------------------------
-# Archivo JSON que acumula fichas de TMDb. Si ya consultamos una película,
-# no vuelve a llamar a la API. Crece con cada corrida y nunca se borra.
+# Pausa entre llamadas. TMDb permite ~40 req/s.
+# Con 4 workers a 0.15s cada uno = ~26 req/s, bien dentro del límite.
+pausa <- 0.15
+
+# --- Caché -------------------------------------------------------------------
 ruta_cache <- file.path(proyecto, "datos", "tmdb_cache.json")
 
 if (file.exists(ruta_cache)) {
   cache_list <- fromJSON(ruta_cache, simplifyDataFrame = FALSE)
-  cli_alert_success("Caché cargada: {length(cache_list)} películas")
+  cli_alert_success("Caché: {length(cache_list)} películas")
 } else {
   cache_list <- list()
-  cli_alert_info("Sin caché previa — se creará una nueva")
+  cli_alert_info("Sin caché previa")
 }
 
-# --- Funciones auxiliares ----------------------------------------------------
+# --- Funciones ---------------------------------------------------------------
 
 safe_chr <- function(x, field) {
   tryCatch({
@@ -50,10 +50,10 @@ safe_chr <- function(x, field) {
   }, error = function(e) return(""))
 }
 
-tmdb_request <- function(endpoint, ...) {
+tmdb_request <- function(endpoint, lang = "es-CL", ...) {
   request(paste0(tmdb_base, endpoint)) |>
     req_headers(Authorization = paste("Bearer", tmdb_token), accept = "application/json") |>
-    req_url_query(language = "es-CL", ...)
+    req_url_query(language = lang, ...)
 }
 
 buscar_pelicula <- function(titulo, anio = NA) {
@@ -67,48 +67,42 @@ buscar_pelicula <- function(titulo, anio = NA) {
     cli_alert_warning("Error buscando '{titulo}': {e$message}")
     return(NULL)
   })
-
   Sys.sleep(pausa)
 
   if (is.null(resp) || length(resp$results) == 0) {
     cli_alert_warning("No encontrada: {titulo} ({anio})")
     return(NA_integer_)
   }
-
   resp$results[[1]]$id
 }
 
-obtener_detalle <- function(tmdb_id) {
+# Esta función NO escribe a la caché directamente (no es compatible con workers).
+# Devuelve el tibble y la caché se arma después al combinar resultados.
+obtener_detalle_api <- function(tmdb_id) {
   if (is.na(tmdb_id)) return(NULL)
 
-  id_str <- as.character(tmdb_id)
-
-  # Cache hit — no llama a la API
-  if (id_str %in% names(cache_list)) {
-    cli_alert("Caché: {tmdb_id}")
-    return(as_tibble(cache_list[[id_str]]))
-  }
-
-  # Cache miss — llamar a la API con release_dates para certificación
-  resp <- tryCatch({
-    tmdb_request(
-      paste0("/movie/", tmdb_id),
-      append_to_response = "credits,keywords,release_dates"
-    ) |> req_perform() |> resp_body_json()
-  }, error = function(e) {
-    cli_alert_warning("Error detalle id {tmdb_id}: {e$message}")
-    return(NULL)
-  })
-
+  # Llamada 1: español (completa)
+  resp_es <- tryCatch({
+    tmdb_request(paste0("/movie/", tmdb_id), lang = "es-CL",
+                 append_to_response = "credits,keywords,release_dates") |>
+      req_perform() |> resp_body_json()
+  }, error = function(e) { return(NULL) })
   Sys.sleep(pausa)
-  if (is.null(resp)) return(NULL)
+  if (is.null(resp_es)) return(NULL)
 
-  elenco <- resp$credits$cast %||% list()
-  crew   <- resp$credits$crew %||% list()
+  # Llamada 2: inglés (textos)
+  resp_en <- tryCatch({
+    tmdb_request(paste0("/movie/", tmdb_id), lang = "en-US") |>
+      req_perform() |> resp_body_json()
+  }, error = function(e) { return(NULL) })
+  Sys.sleep(pausa)
 
-  # Certificación de edad (US primero, luego la primera disponible)
+  elenco <- resp_es$credits$cast %||% list()
+  crew   <- resp_es$credits$crew %||% list()
+
+  # Certificación US
   cert <- ""
-  release_dates <- resp$release_dates$results %||% list()
+  release_dates <- resp_es$release_dates$results %||% list()
   us_rel <- keep(release_dates, ~ .x$iso_3166_1 == "US")
   if (length(us_rel) > 0) {
     certs <- map_chr(us_rel[[1]]$release_dates %||% list(), ~ safe_chr(.x, "certification"))
@@ -116,117 +110,107 @@ obtener_detalle <- function(tmdb_id) {
     if (length(certs) > 0) cert <- certs[1]
   }
 
-  # Productoras
-  productoras <- map_chr(resp$production_companies %||% list(), ~ safe_chr(.x, "name")) |>
+  productoras <- map_chr(resp_es$production_companies %||% list(), ~ safe_chr(.x, "name")) |>
+    paste(collapse = ", ")
+  idiomas_hablados <- map_chr(resp_es$spoken_languages %||% list(), ~ safe_chr(.x, "english_name")) |>
     paste(collapse = ", ")
 
-  # Idiomas hablados
-  idiomas_hablados <- map_chr(resp$spoken_languages %||% list(), ~ safe_chr(.x, "english_name")) |>
-    paste(collapse = ", ")
-
-  # Presupuesto y recaudación
-  presupuesto <- resp$budget %||% 0
-  recaudacion <- resp$revenue %||% 0
-
-  # Año y década
-  anio <- str_sub(resp$release_date %||% "", 1, 4) |> as.integer()
+  presupuesto <- resp_es$budget %||% 0
+  recaudacion <- resp_es$revenue %||% 0
+  anio <- str_sub(resp_es$release_date %||% "", 1, 4) |> as.integer()
   decada <- if (!is.na(anio)) paste0(floor(anio / 10) * 10, "s") else NA_character_
 
-  fila <- tibble(
-    tmdb_id           = resp$id,
-    titulo_original   = resp$original_title %||% NA_character_,
-    titulo_es         = resp$title %||% NA_character_,
+  tibble(
+    tmdb_id           = resp_es$id,
+    titulo_original   = resp_es$original_title %||% NA_character_,
+    titulo_es         = resp_es$title %||% NA_character_,
+    titulo_en         = resp_en$title %||% resp_es$original_title %||% NA_character_,
     anio              = anio,
     decada            = decada,
-    fecha_estreno     = resp$release_date %||% NA_character_,
-    sinopsis          = resp$overview %||% NA_character_,
-    generos           = map_chr(resp$genres %||% list(), ~ safe_chr(.x, "name")) |> paste(collapse = ", "),
+    fecha_estreno     = resp_es$release_date %||% NA_character_,
+    sinopsis          = resp_es$overview %||% NA_character_,
+    sinopsis_en       = resp_en$overview %||% NA_character_,
+    generos           = map_chr(resp_es$genres %||% list(), ~ safe_chr(.x, "name")) |> paste(collapse = ", "),
     director          = crew |> keep(~ identical(.x[["job"]], "Director")) |> map_chr(~ safe_chr(.x, "name")) |> paste(collapse = ", "),
     guionistas        = crew |> keep(~ isTRUE(.x[["job"]] %in% c("Screenplay", "Writer"))) |> map_chr(~ safe_chr(.x, "name")) |> unique() |> paste(collapse = ", "),
     compositor        = crew |> keep(~ identical(.x[["job"]], "Original Music Composer")) |> map_chr(~ safe_chr(.x, "name")) |> paste(collapse = ", "),
     elenco            = map_chr(head(elenco, 6), ~ safe_chr(.x, "name")) |> paste(collapse = ", "),
     personajes        = map_chr(head(elenco, 6), ~ safe_chr(.x, "character")) |> paste(collapse = ", "),
-    duracion_min      = resp$runtime %||% NA_integer_,
+    duracion_min      = resp_es$runtime %||% NA_integer_,
     certificacion     = if (cert != "") cert else NA_character_,
-    idioma_original   = resp$original_language %||% NA_character_,
+    idioma_original   = resp_es$original_language %||% NA_character_,
     idiomas_hablados  = idiomas_hablados,
-    paises            = map_chr(resp$production_countries %||% list(), ~ safe_chr(.x, "name")) |> paste(collapse = ", "),
+    paises            = map_chr(resp_es$production_countries %||% list(), ~ safe_chr(.x, "name")) |> paste(collapse = ", "),
     productoras       = productoras,
     presupuesto_usd   = if (presupuesto > 0) presupuesto else NA_real_,
     recaudacion_usd   = if (recaudacion > 0) recaudacion else NA_real_,
-    tmdb_rating       = resp$vote_average %||% NA_real_,
-    tmdb_votos        = resp$vote_count %||% NA_integer_,
-    popularidad       = resp$popularity %||% NA_real_,
-    poster_path       = if (!is.null(resp$poster_path)) paste0(poster_base, resp$poster_path) else NA_character_,
-    backdrop_path     = if (!is.null(resp$backdrop_path)) paste0("https://image.tmdb.org/t/p/w1280", resp$backdrop_path) else NA_character_,
-    keywords          = map_chr(resp$keywords$keywords %||% list(), ~ safe_chr(.x, "name")) |> paste(collapse = ", "),
-    coleccion_tmdb    = resp$belongs_to_collection$name %||% NA_character_,
-    imdb_id           = resp$imdb_id %||% NA_character_,
-    tagline           = resp$tagline %||% NA_character_
+    tmdb_rating       = resp_es$vote_average %||% NA_real_,
+    tmdb_votos        = resp_es$vote_count %||% NA_integer_,
+    popularidad       = resp_es$popularity %||% NA_real_,
+    poster_path       = if (!is.null(resp_es$poster_path)) paste0(poster_base, resp_es$poster_path) else NA_character_,
+    backdrop_path     = if (!is.null(resp_es$backdrop_path)) paste0("https://image.tmdb.org/t/p/w1280", resp_es$backdrop_path) else NA_character_,
+    keywords          = map_chr(resp_es$keywords$keywords %||% list(), ~ safe_chr(.x, "name")) |> paste(collapse = ", "),
+    coleccion_tmdb    = resp_es$belongs_to_collection$name %||% NA_character_,
+    imdb_id           = resp_es$imdb_id %||% NA_character_,
+    tagline           = resp_es$tagline %||% NA_character_,
+    tagline_en        = resp_en$tagline %||% NA_character_
   )
-
-  # Guardar en caché (se acumula en memoria, se graba al final)
-  cache_list[[id_str]] <<- as.list(fila)
-
-  fila
 }
 
-# --- Procesar inventario ----------------------------------------------------
-cli_h1("Enriquecimiento con TMDb")
+# Wrapper que revisa caché primero, llama a API si no está
+obtener_detalle <- function(tmdb_id, cache_ref) {
+  id_str <- as.character(tmdb_id)
+  if (id_str %in% names(cache_ref)) {
+    return(as_tibble(cache_ref[[id_str]]))
+  }
+  obtener_detalle_api(tmdb_id)
+}
+
+# --- Procesar ----------------------------------------------------------------
+cli_h1("Enriquecimiento con TMDb (ES + EN)")
 
 inventario <- read_csv(file.path(proyecto, "datos", "inventario_crudo.csv"), show_col_types = FALSE)
 cli_alert_info("Inventario: {nrow(inventario)} archivos")
 
 # Correcciones manuales
 ruta_correcciones <- file.path(proyecto, "datos", "correcciones_manuales.csv")
-
 if (file.exists(ruta_correcciones)) {
   correcciones <- read_csv(ruta_correcciones, show_col_types = FALSE) |>
-    select(titulo_archivo, anio_archivo, tmdb_id_manual = tmdb_id)
-  cli_alert_success("Correcciones: {nrow(correcciones)} entradas")
+    select(titulo_archivo, anio_archivo, tmdb_id_manual = tmdb_id) |>
+    mutate(titulo_norm = stri_trans_general(titulo_archivo, "Latin-ASCII") |>
+             str_to_lower() |> str_replace_all("[^a-z0-9 ]", "") |> str_squish())
+  cli_alert_success("Correcciones: {nrow(correcciones)}")
 } else {
-  correcciones <- tibble(titulo_archivo = character(), anio_archivo = double(), tmdb_id_manual = integer())
+  correcciones <- tibble(titulo_archivo = character(), anio_archivo = double(),
+                         tmdb_id_manual = integer(), titulo_norm = character())
 }
 
-# Función para normalizar strings: quita acentos, minúsculas, solo alfanuméricos
-# Así "Nausicaä" y "Nausicaa" matchean, y "d'Amélie" matchea con "d'Amelie"
 normalizar <- function(x) {
-  x |>
-    stringi::stri_trans_general("Latin-ASCII") |>
-    str_to_lower() |>
-    str_replace_all("[^a-z0-9 ]", "") |>
-    str_squish()
+  x |> stri_trans_general("Latin-ASCII") |> str_to_lower() |>
+    str_replace_all("[^a-z0-9 ]", "") |> str_squish()
 }
 
-# Pre-normalizar los títulos de las correcciones
-correcciones <- correcciones |>
-  mutate(titulo_norm = normalizar(titulo_archivo))
-
-# Buscar IDs
+# Buscar IDs (secuencial — es rápido, ~0.15s por película)
 cli_alert_info("Buscando IDs...")
-
 catalogo <- inventario |>
   mutate(
-    tmdb_id = map2_int(
-      titulo_archivo, anio_archivo,
-      ~ {
-        titulo_norm <- normalizar(.x)
-        match_idx <- which(
-          correcciones$titulo_norm == titulo_norm &
-          (correcciones$anio_archivo == .y | is.na(correcciones$anio_archivo) | is.na(.y))
-        )
-        if (length(match_idx) > 0) {
-          id_manual <- correcciones$tmdb_id_manual[match_idx[1]]
-          cli_alert_success("Corrección: {.x} -> id {id_manual}")
-          return(as.integer(id_manual))
-        }
-        cli_alert("Buscando: {.x} ({.y})")
-        buscar_pelicula(.x, .y)
+    tmdb_id = map2_int(titulo_archivo, anio_archivo, ~ {
+      titulo_norm <- normalizar(.x)
+      match_idx <- which(
+        correcciones$titulo_norm == titulo_norm &
+        (correcciones$anio_archivo == .y | is.na(correcciones$anio_archivo) | is.na(.y))
+      )
+      if (length(match_idx) > 0) {
+        id_manual <- correcciones$tmdb_id_manual[match_idx[1]]
+        cli_alert_success("Corrección: {.x} -> id {id_manual}")
+        return(as.integer(id_manual))
       }
-    )
+      cli_alert("Buscando: {.x} ({.y})")
+      buscar_pelicula(.x, .y)
+    })
   )
 
-# Obtener detalles (con caché)
+# Obtener detalles
 ids_encontrados    <- catalogo |> filter(!is.na(tmdb_id))
 ids_no_encontrados <- catalogo |> filter(is.na(tmdb_id))
 
@@ -236,28 +220,79 @@ if (nrow(ids_no_encontrados) > 0) {
 }
 
 ids_unicos <- unique(ids_encontrados$tmdb_id)
-n_cache <- sum(as.character(ids_unicos) %in% names(cache_list))
-n_nuevos <- length(ids_unicos) - n_cache
+ids_en_cache <- as.character(ids_unicos) %in% names(cache_list)
+n_cache <- sum(ids_en_cache)
+n_nuevos <- sum(!ids_en_cache)
 
 cli_alert_info("{length(ids_unicos)} únicas: {n_cache} en caché, {n_nuevos} nuevas")
-if (n_nuevos > 0) cli_alert_info("~{round(n_nuevos * pausa * 2 / 60, 1)} min para las nuevas")
 
-detalles <- ids_unicos |>
-  map(~ obtener_detalle(.x)) |>
-  bind_rows()
+# --- Separar: caché vs API --------------------------------------------------
+# Los que están en caché se leen directo (instantáneo).
+# Los nuevos se procesan en paralelo con furrr.
+
+ids_desde_cache <- ids_unicos[ids_en_cache]
+ids_desde_api   <- ids_unicos[!ids_en_cache]
+
+# Leer desde caché (instantáneo)
+if (length(ids_desde_cache) > 0) {
+  cli_alert_info("Leyendo {length(ids_desde_cache)} desde caché...")
+  detalles_cache <- ids_desde_cache |>
+    map(~ as_tibble(cache_list[[as.character(.x)]])) |>
+    bind_rows()
+} else {
+  detalles_cache <- tibble()
+}
+
+# Consultar API en paralelo para los nuevos
+if (length(ids_desde_api) > 0) {
+  # Detectar núcleos disponibles. Usamos máximo 4 workers para no saturar la API.
+  # Con 4 workers a 0.15s de pausa = ~26 req/s, bien bajo el límite de TMDb (~40/s).
+  n_workers <- min(4, parallel::detectCores() - 1)
+  cli_alert_info("Consultando {length(ids_desde_api)} nuevas en paralelo ({n_workers} workers)")
+  cli_alert_info("~{round(length(ids_desde_api) * pausa * 2 / n_workers / 60, 1)} min estimados")
+
+  # Activar paralelismo
+  plan(multisession, workers = n_workers)
+
+  detalles_api <- future_map(
+    ids_desde_api,
+    ~ obtener_detalle_api(.x),
+    .options = furrr_options(seed = TRUE),
+    .progress = TRUE
+  ) |>
+    compact() |>   # remover NULLs (películas que fallaron)
+    bind_rows()
+
+  # Volver a modo secuencial
+  plan(sequential)
+} else {
+  detalles_api <- tibble()
+}
+
+# Combinar resultados
+detalles <- bind_rows(detalles_cache, detalles_api)
+
+# Actualizar caché con los nuevos resultados de la API
+if (nrow(detalles_api) > 0) {
+  cli_alert_info("Actualizando caché con {nrow(detalles_api)} películas nuevas...")
+  for (i in seq_len(nrow(detalles_api))) {
+    id_str <- as.character(detalles_api$tmdb_id[i])
+    cache_list[[id_str]] <- as.list(detalles_api[i, ])
+  }
+}
 
 # Guardar caché
 write_lines(toJSON(cache_list, pretty = TRUE, auto_unbox = TRUE, na = "null"), ruta_cache)
 cli_alert_success("Caché guardada: {length(cache_list)} películas")
 
-# Unir
-catalogo_final <- catalogo |>
+# --- Unir y deduplicar -------------------------------------------------------
+catalogo_completo <- catalogo |>
   left_join(detalles, by = "tmdb_id") |>
   select(
-    tmdb_id, imdb_id, titulo_es, titulo_original, titulo_archivo,
+    tmdb_id, imdb_id, titulo_es, titulo_en, titulo_original, titulo_archivo,
     anio, decada, fecha_estreno,
     generos, director, guionistas, compositor,
-    elenco, personajes, duracion_min, sinopsis, tagline,
+    elenco, personajes, duracion_min, sinopsis, sinopsis_en, tagline, tagline_en,
     certificacion, idioma_original, idiomas_hablados, paises,
     productoras, keywords, coleccion_tmdb,
     presupuesto_usd, recaudacion_usd,
@@ -266,6 +301,30 @@ catalogo_final <- catalogo |>
     disco, coleccion, tipo, estado, carpeta, nombre_archivo, extension, tamano_mb,
     ruta_completa
   )
+
+# Deduplicar: quedarse con la copia de mayor tamaño por tmdb_id.
+# Guardar todas las ubicaciones como campo adicional.
+sin_id <- catalogo_completo |> filter(is.na(tmdb_id))
+
+con_id <- catalogo_completo |>
+  filter(!is.na(tmdb_id)) |>
+  mutate(tamano_num = as.numeric(tamano_mb)) |>
+  group_by(tmdb_id) |>
+  mutate(
+    n_copias = n(),
+    todas_ubicaciones = paste(
+      paste0(disco, ": ", nombre_archivo, " (", tamano_mb, " MB)"),
+      collapse = " | "
+    )
+  ) |>
+  slice_max(tamano_num, n = 1, with_ties = FALSE) |>
+  ungroup() |>
+  select(-tamano_num)
+
+catalogo_final <- bind_rows(con_id, sin_id)
+
+n_dupes <- nrow(catalogo_completo) - nrow(catalogo_final)
+if (n_dupes > 0) cli_alert_info("Deduplicadas: {n_dupes} copias removidas")
 
 # --- Guardar -----------------------------------------------------------------
 cli_h2("Guardando")
@@ -279,7 +338,7 @@ write_csv(catalogo_final, ruta_csv)
 cli_alert_success("CSV: {ruta_csv}")
 
 cli_h2("Resumen")
-cli_alert_success("Total: {nrow(catalogo_final)}")
+cli_alert_success("Total (sin duplicados): {nrow(catalogo_final)}")
 cli_alert_success("Con metadatos: {sum(!is.na(catalogo_final$tmdb_id))}")
 cli_alert_warning("Sin match: {sum(is.na(catalogo_final$tmdb_id))}")
 catalogo_final |> count(tipo, estado, name = "n") |> print()
