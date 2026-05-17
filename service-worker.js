@@ -7,7 +7,7 @@
 //   - Same-origin GET no precacheado: cache-first.
 // Para invalidar todos los caches: bumpear VERSION.
 
-const VERSION = "v2";
+const VERSION = "v3";
 const STATIC_CACHE = `cinemateca-static-${VERSION}`;
 const POSTER_CACHE = `cinemateca-posters-${VERSION}`;
 const CATALOG_CACHE = `cinemateca-catalog-${VERSION}`;
@@ -15,6 +15,8 @@ const CATALOG_CACHE = `cinemateca-catalog-${VERSION}`;
 const PRECACHE = [
   "./",
   "./index.html",
+  "./style.css",
+  "./app.js",
   "./vendor/fuse.min.js",
   "./manifest.webmanifest",
   "./icons/icon-192.png",

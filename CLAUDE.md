@@ -33,19 +33,27 @@ escaneo de discos + enriquecimiento con TMDb).
 ## Estructura
 
 ```
-index.html              # SPA de un solo archivo (HTML+CSS+JS inline)
+index.html              # estructura HTML (estilos y JS en archivos aparte)
+style.css               # estilos
+app.js                  # toda la lógica de la SPA
+vendor/
+  fuse.min.js           # búsqueda fuzzy bundleada local
 catalogo.json           # datos del catálogo (raíz, lo lee la web)
+manifest.webmanifest    # PWA manifest
+service-worker.js       # PWA service worker (precache + offline)
+icons/                  # iconos PWA + favicons
 escaneo.R               # escanea discos -> datos/inventario_crudo.csv
 enriquecimiento.R       # enriquece con TMDb -> catalogo.json
 datos/
   inventario_crudo.csv
   catalogo_enriquecido.csv
   correcciones_manuales.csv
-  tmdb_cache.json
+  tmdb_cache.json       # ignorado en git, regenerable
 tools/
   refetch_posters_en.mjs  # script Node para re-bajar posters en inglés
 .github/workflows/
   refetch-posters.yml     # workflow manual que corre el script anterior
+  validate.yml            # CI: valida JSON y sintaxis JS en cada push
 ```
 
 ## Despliegue
