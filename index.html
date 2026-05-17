@@ -8,6 +8,14 @@
 <meta property="og:description" content="Catalogo personal de peliculas">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#0a0a0c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Cinemateca">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="icons/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="vendor/fuse.min.js"></script>
@@ -380,4 +388,6 @@ else if(e.key==='s'&&!modalOpen){surpriseMe()}
 else if(e.key==='ArrowRight'&&modalOpen){nextMovie()}
 else if(e.key==='ArrowLeft'&&modalOpen){prevMovie()}});
 var st;document.getElementById('search').addEventListener('input',function(){clearTimeout(st);st=setTimeout(apply,200)});init();
+if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('service-worker.js').then(function(reg){reg.addEventListener('updatefound',function(){var nw=reg.installing;if(!nw)return;nw.addEventListener('statechange',function(){if(nw.state==='installed'&&navigator.serviceWorker.controller)showUpdateBanner()})})}).catch(function(){})})}
+function showUpdateBanner(){if(document.getElementById('updBanner'))return;var d=document.createElement('div');d.id='updBanner';d.style.cssText='position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:var(--bg-modal);border:1px solid var(--accent-dim);color:var(--text);padding:.7rem 1.2rem;border-radius:var(--radius);z-index:400;font-size:.85rem;display:flex;gap:.8rem;align-items:center;box-shadow:var(--shadow)';d.innerHTML='Nueva version disponible. <button class="btn bs ba" onclick="location.reload()">Actualizar</button>';document.body.appendChild(d)}
 </script></body></html>
