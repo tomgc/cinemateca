@@ -8,16 +8,32 @@
 #            discos no conectados (acumulación incremental).
 # ==============================================================================
 
+# --- Verificación e instalación de paquetes ----------------------------------
+paquetes_requeridos <- c("fs", "dplyr", "stringr", "readr", "purrr", "cli", "here")
+paquetes_faltantes <- paquetes_requeridos[
+  !sapply(paquetes_requeridos, requireNamespace, quietly = TRUE)
+]
+if (length(paquetes_faltantes) > 0) {
+  install.packages(paquetes_faltantes)
+}
+
 library(fs)
 library(dplyr)
 library(stringr)
 library(readr)
+library(here)
 
-# --- Ruta del proyecto --------------------------------------------------------
-# Todos los outputs van dentro de esta carpeta.
-# Ajusta esta ruta si mueves el proyecto a otra ubicación.
-proyecto <- path_expand("~/Desktop/Cinemateca")
-dir_create(path(proyecto, "datos"))
+# --- Rutas (anclas en el repo, no en el sistema de archivos del usuario) -----
+dir_create(here::here("datos"))
+
+# --- Helper: escritura atómica de CSV ----------------------------------------
+# Escribe a un archivo temporal y lo renombra. Evita CSVs corruptos si la
+# ejecución se interrumpe a mitad de escritura.
+write_csv_atomic <- function(data, path) {
+  tmp <- paste0(path, ".tmp")
+  write_csv(data, tmp)
+  file.rename(tmp, path)
+}
 
 # --- Configuración de fuentes ------------------------------------------------
 # Cada fila es una carpeta a escanear.
@@ -159,7 +175,7 @@ inventario_nuevo <- fuentes |>
 # --- Acumular con inventario previo ------------------------------------------
 # UPSERT: discos escaneados se reemplazan, discos no conectados se conservan.
 
-ruta_salida <- path(proyecto, "datos", "inventario_crudo.csv")
+ruta_salida <- here::here("datos", "inventario_crudo.csv")
 discos_escaneados <- unique(inventario_nuevo$disco)
 
 if (file.exists(ruta_salida) && length(discos_escaneados) > 0) {
@@ -191,12 +207,14 @@ if (nrow(inventario) > 0) {
     count(disco, estado, coleccion, tipo, name = "n_archivos") |>
     print(n = Inf)
 
-  write_csv(inventario, ruta_salida)
+  write_csv_atomic(inventario, ruta_salida)
   cli::cli_alert_success("Guardado en: {ruta_salida}")
 
   # Backup con fecha
-  write_csv(inventario, path(proyecto, "datos",
-    paste0("inventario_crudo_", format(Sys.Date(), "%Y%m%d"), ".csv")))
+  write_csv_atomic(
+    inventario,
+    here::here("datos", paste0("inventario_crudo_", format(Sys.Date(), "%Y%m%d"), ".csv"))
+  )
 } else {
   cli::cli_alert_danger("No se encontraron archivos.")
 }

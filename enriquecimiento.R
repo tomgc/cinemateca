@@ -7,6 +7,18 @@
 # Usa paralelismo (furrr) para acelerar las consultas a la API.
 # ==============================================================================
 
+# --- Verificación e instalación de paquetes ----------------------------------
+paquetes_requeridos <- c(
+  "dplyr", "stringr", "readr", "purrr", "httr2", "jsonlite",
+  "cli", "stringi", "furrr", "here"
+)
+paquetes_faltantes <- paquetes_requeridos[
+  !sapply(paquetes_requeridos, requireNamespace, quietly = TRUE)
+]
+if (length(paquetes_faltantes) > 0) {
+  install.packages(paquetes_faltantes)
+}
+
 library(dplyr)
 library(stringr)
 library(readr)
@@ -15,9 +27,17 @@ library(httr2)
 library(jsonlite)
 library(cli)
 library(stringi)
-library(furrr)      # install.packages("furrr") si no lo tienes
+library(furrr)
+library(here)
 
-proyecto <- path.expand("~/Desktop/Cinemateca")
+# --- Helper: escritura atómica -----------------------------------------------
+# Escribe a un archivo temporal y lo renombra. Evita archivos corruptos si la
+# ejecución se interrumpe a mitad de escritura.
+write_atomic <- function(content_writer, path) {
+  tmp <- paste0(path, ".tmp")
+  content_writer(tmp)
+  file.rename(tmp, path)
+}
 
 # --- API config --------------------------------------------------------------
 tmdb_token <- "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiIyOGU5ZmQ0ZmY1Yjg1ZmEwZTUyMGQ0N2YyOGYwZTNlNSIsIm5iZiI6MTc3NzU5MzA2Ni45MjcsInN1YiI6IjY5ZjNlYWVhMmQ0OGU2MDk0NWY5Zjk3ZCIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.0M5J3xxbcGLOy2q2rcv5ibSy0WctOLhAp5kuMdeedmM"
@@ -29,7 +49,7 @@ poster_base <- "https://image.tmdb.org/t/p/w500"
 pausa <- 0.15
 
 # --- Caché -------------------------------------------------------------------
-ruta_cache <- file.path(proyecto, "datos", "tmdb_cache.json")
+ruta_cache <- here::here("datos", "tmdb_cache.json")
 
 if (file.exists(ruta_cache)) {
   cache_list <- fromJSON(ruta_cache, simplifyDataFrame = FALSE)
@@ -173,11 +193,11 @@ obtener_detalle <- function(tmdb_id, cache_ref) {
 # --- Procesar ----------------------------------------------------------------
 cli_h1("Enriquecimiento con TMDb (ES + EN)")
 
-inventario <- read_csv(file.path(proyecto, "datos", "inventario_crudo.csv"), show_col_types = FALSE)
+inventario <- read_csv(here::here("datos", "inventario_crudo.csv"), show_col_types = FALSE)
 cli_alert_info("Inventario: {nrow(inventario)} archivos")
 
 # Correcciones manuales
-ruta_correcciones <- file.path(proyecto, "datos", "correcciones_manuales.csv")
+ruta_correcciones <- here::here("datos", "correcciones_manuales.csv")
 if (file.exists(ruta_correcciones)) {
   correcciones <- read_csv(ruta_correcciones, show_col_types = FALSE) |>
     select(titulo_archivo, anio_archivo, tmdb_id_manual = tmdb_id) |>
@@ -285,8 +305,11 @@ if (nrow(detalles_api) > 0) {
   }
 }
 
-# Guardar caché
-write_lines(toJSON(cache_list, pretty = TRUE, auto_unbox = TRUE, na = "null"), ruta_cache)
+# Guardar caché (atómica)
+write_atomic(
+  function(p) write_lines(toJSON(cache_list, pretty = TRUE, auto_unbox = TRUE, na = "null"), p),
+  ruta_cache
+)
 cli_alert_success("Caché guardada: {length(cache_list)} películas")
 
 # --- Unir y deduplicar -------------------------------------------------------
@@ -330,15 +353,56 @@ catalogo_final <- bind_rows(con_id, sin_id)
 n_dupes <- nrow(catalogo_completo) - nrow(catalogo_final)
 if (n_dupes > 0) cli_alert_info("Deduplicadas: {n_dupes} copias removidas")
 
+# --- Preservar datos del usuario gestionados desde la web --------------------
+# El web edita rating_personal, fecha_visionado, partner_wants y agrega
+# películas manualmente (estado="pendiente", coleccion="Manual"). Estos datos
+# viven en el catalogo.json de la raíz (servido a GitHub Pages). Si regeneramos
+# desde cero sin merge, los perdemos. Aquí los recuperamos.
+ruta_root_catalog <- here::here("catalogo.json")
+if (file.exists(ruta_root_catalog)) {
+  cli_alert_info("Merge: leyendo catalogo.json en raíz para preservar datos web")
+  existing_root <- fromJSON(ruta_root_catalog) |> as_tibble()
+
+  if ("tmdb_id" %in% names(existing_root)) {
+    # 1) Campos personales que el R no produce
+    campos_usuario <- intersect(
+      c("rating_personal", "fecha_visionado", "partner_wants"),
+      names(existing_root)
+    )
+    if (length(campos_usuario) > 0) {
+      catalogo_final <- catalogo_final |>
+        left_join(
+          existing_root |> select(tmdb_id, all_of(campos_usuario)),
+          by = "tmdb_id"
+        )
+      cli_alert_success("Preservados campos: {paste(campos_usuario, collapse = ', ')}")
+    }
+
+    # 2) Películas agregadas manualmente desde web (no están en inventario_crudo).
+    manual_only <- existing_root |>
+      filter(!is.na(tmdb_id) & !tmdb_id %in% catalogo_final$tmdb_id)
+    if (nrow(manual_only) > 0) {
+      catalogo_final <- bind_rows(catalogo_final, manual_only)
+      cli_alert_success("Preservadas {nrow(manual_only)} películas agregadas vía web")
+    }
+  }
+}
+
+# --- Ordenar columnas alfabéticamente (diffs de git legibles) ----------------
+catalogo_final <- catalogo_final |> select(sort(names(catalogo_final)))
+
 # --- Guardar -----------------------------------------------------------------
 cli_h2("Guardando")
 
-ruta_json <- file.path(proyecto, "datos", "catalogo.json")
-catalogo_final |> toJSON(pretty = TRUE, na = "null") |> write_lines(ruta_json)
+ruta_json <- here::here("datos", "catalogo.json")
+write_atomic(
+  function(p) catalogo_final |> toJSON(pretty = TRUE, na = "null") |> write_lines(p),
+  ruta_json
+)
 cli_alert_success("JSON: {ruta_json}")
 
-ruta_csv <- file.path(proyecto, "datos", "catalogo_enriquecido.csv")
-write_csv(catalogo_final, ruta_csv)
+ruta_csv <- here::here("datos", "catalogo_enriquecido.csv")
+write_atomic(function(p) write_csv(catalogo_final, p), ruta_csv)
 cli_alert_success("CSV: {ruta_csv}")
 
 cli_h2("Resumen")

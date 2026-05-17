@@ -66,14 +66,40 @@ URL: https://tomgc.github.io/cinemateca/
 
 ## Flujo de trabajo
 
-1. Para cambios en la UI o features de la web: editar `index.html`.
+1. Para cambios en la UI o features de la web: editar `index.html`,
+   `style.css` o `app.js` según corresponda.
 2. Para nuevos discos o re-escaneo: correr `escaneo.R` -> `enriquecimiento.R`
-   localmente (no se ejecutan desde la web).
+   localmente (no se ejecutan desde la web). Los scripts usan `here::here()`
+   para resolver rutas desde la raíz del repo, no `~/Desktop/Cinemateca`.
 3. Los cambios de estado/agregar/ocultar hechos desde la web se guardan en
    `localStorage` y se exportan vía el botón "Exportar" (muestra un diff
-   antes de descargar). El JSON descargado reemplaza al del repo.
+   antes de descargar). Alternativa: configurar **Sync directo a GitHub**
+   con un PAT y los cambios se commitean solos.
 4. Para refrescar todos los posters al inglés: GitHub Actions ->
    "Refetch English posters" -> Run workflow.
+
+## Comportamiento del flujo R
+
+- `enriquecimiento.R` **preserva** los campos `rating_personal`,
+  `fecha_visionado`, `partner_wants` y las películas agregadas vía web
+  (haciendo merge con el `catalogo.json` en raíz antes de escribir el
+  nuevo `datos/catalogo.json`). Esto evita perder data del usuario al
+  regenerar desde inventario.
+- Las columnas del JSON salen alfabéticamente ordenadas para que los
+  diffs de git muestren solo cambios reales.
+- Escritura atómica (write → rename) para `catalogo.json`,
+  `catalogo_enriquecido.csv` y `tmdb_cache.json`. Si la ejecución se
+  interrumpe, los archivos quedan en su estado previo, no corruptos.
+
+## Desviaciones declaradas de los principios de desarrollo
+
+- **D — Estructura de directorios**: el proyecto usa `datos/` para datos
+  raw y procesado mezclados, en vez de `data/raw/` + `data/processed/`.
+  Razón: predates the principles, mover paths implica reorganizar archivos
+  locales en el Mac del usuario. Alto riesgo, bajo valor inmediato.
+- **C.5 / D — modularización del JS**: `app.js` mantiene nombres cortos
+  (D, F, opM, clM, pF, apply, ren) heredados. Refactor de naming queda
+  fuera de scope; nuevas funciones usan nombres explícitos.
 
 ## Detalles técnicos relevantes
 
