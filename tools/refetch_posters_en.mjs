@@ -9,7 +9,7 @@
 // If TMDB_TOKEN is not set, falls back to the public read-only token
 // already embedded in index.html.
 
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, rename } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -87,11 +87,24 @@ console.log(
   `\nDone in ${elapsed}s — ${posterUpdated} posters updated, ${backdropUpdated} backdrops updated, ${failed} failed`,
 );
 
+function sortKeysRecursive(value) {
+  if (Array.isArray(value)) return value.map(sortKeysRecursive);
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const k of Object.keys(value).sort()) out[k] = sortKeysRecursive(value[k]);
+    return out;
+  }
+  return value;
+}
+
 if (DRY_RUN) {
   console.log("Dry run — catalog not written.");
 } else if (posterUpdated || backdropUpdated) {
-  await writeFile(CATALOG, JSON.stringify(catalog, null, 2) + "\n");
-  console.log(`Wrote ${CATALOG}`);
+  const payload = JSON.stringify(sortKeysRecursive(catalog), null, 2) + "\n";
+  const tmpPath = CATALOG + ".tmp";
+  await writeFile(tmpPath, payload);
+  await rename(tmpPath, CATALOG);
+  console.log(`Wrote ${CATALOG} (atomic, keys sorted alphabetically)`);
 } else {
   console.log("No changes to write.");
 }
