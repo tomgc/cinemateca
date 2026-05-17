@@ -7,7 +7,7 @@
 //   - Same-origin GET no precacheado: cache-first.
 // Para invalidar todos los caches: bumpear VERSION.
 
-const VERSION = "v1";
+const VERSION = "v2";
 const STATIC_CACHE = `cinemateca-static-${VERSION}`;
 const POSTER_CACHE = `cinemateca-posters-${VERSION}`;
 const CATALOG_CACHE = `cinemateca-catalog-${VERSION}`;
@@ -64,6 +64,7 @@ self.addEventListener("fetch", (e) => {
     return;
   }
   if (url.hostname === "api.themoviedb.org") return; // network-only
+  if (url.hostname === "api.github.com") return; // network-only
   if (url.origin === self.location.origin) {
     e.respondWith(cacheFirst(req, STATIC_CACHE));
   }
