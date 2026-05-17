@@ -147,8 +147,12 @@ obtener_detalle_api <- function(tmdb_id) {
     tmdb_rating       = resp_es$vote_average %||% NA_real_,
     tmdb_votos        = resp_es$vote_count %||% NA_integer_,
     popularidad       = resp_es$popularity %||% NA_real_,
-    poster_path       = if (!is.null(resp_es$poster_path)) paste0(poster_base, resp_es$poster_path) else NA_character_,
-    backdrop_path     = if (!is.null(resp_es$backdrop_path)) paste0("https://image.tmdb.org/t/p/w1280", resp_es$backdrop_path) else NA_character_,
+    poster_path       = if (!is.null(resp_en$poster_path)) paste0(poster_base, resp_en$poster_path)
+                        else if (!is.null(resp_es$poster_path)) paste0(poster_base, resp_es$poster_path)
+                        else NA_character_,
+    backdrop_path     = if (!is.null(resp_en$backdrop_path)) paste0("https://image.tmdb.org/t/p/w1280", resp_en$backdrop_path)
+                        else if (!is.null(resp_es$backdrop_path)) paste0("https://image.tmdb.org/t/p/w1280", resp_es$backdrop_path)
+                        else NA_character_,
     keywords          = map_chr(resp_es$keywords$keywords %||% list(), ~ safe_chr(.x, "name")) |> paste(collapse = ", "),
     coleccion_tmdb    = resp_es$belongs_to_collection$name %||% NA_character_,
     imdb_id           = resp_es$imdb_id %||% NA_character_,
