@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(git fetch:*)",
+      "Bash(git rebase:*)",
+      "Bash(git checkout:*)",
+      "Bash(git switch:*)",
+      "Bash(git merge:*)",
+      "Bash(git rm:*)",
+      "Bash(git mv:*)",
+      "Bash(git stash:*)",
+      "Bash(git reset:*)",
+      "Bash(git restore:*)",
+      "Bash(git tag:*)",
+      "Bash(mkdir:*)",
+      "Bash(touch:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(node tools/*)",
+      "Bash(node --check:*)",
+      "Bash(python3 tools/*)",
+      "Bash(python3 -c:*)",
+      "Bash(python3 -m http.server:*)",
+      "Bash(jq:*)",
+      "Bash(curl -s https://api.themoviedb.org/*)",
+      "Bash(curl -sv https://api.themoviedb.org/*)",
+      "mcp__github__list_pull_requests",
+      "mcp__github__pull_request_read",
+      "mcp__github__get_file_contents",
+      "mcp__github__list_branches",
+      "mcp__github__list_commits",
+      "mcp__github__get_commit",
+      "mcp__github__search_code",
+      "mcp__github__issue_read",
+      "mcp__github__list_issues"
+    ]
+  }
+}

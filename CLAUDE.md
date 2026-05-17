@@ -13,6 +13,23 @@ escaneo de discos + enriquecimiento con TMDb).
 - Mantén las respuestas concisas y directas. Sin emojis salvo que se
   pidan explícitamente.
 
+## Preferencias de flujo de trabajo
+
+- **Commitea y pushea sin pedir confirmación** después de cada cambio
+  significativo. Mensaje de commit descriptivo en español neutro.
+- **Trabaja sobre `main` directamente** si el cambio es chico y el usuario
+  está esperando ver el resultado en el sitio. Para refactors grandes o
+  cambios riesgosos, usa una rama de feature.
+- **No pidas confirmación** para: operaciones git (add/commit/push/pull/
+  rebase/merge/checkout), crear directorios, mover/copiar archivos,
+  correr scripts en `tools/`, ejecutar `python3 -c` o `node --check`.
+- **Sí pide confirmación** para: `git push --force`, `git reset --hard`,
+  borrar archivos del catálogo, ejecutar `escaneo.R`/`enriquecimiento.R`
+  (modifican el catálogo en masa), rotar el token de TMDb, cualquier
+  operación que afecte irreversiblemente datos en producción.
+- Las permisos detallados están en `.claude/settings.json` (commiteado
+  al repo, aplica a todas las sesiones).
+
 ## Estructura
 
 ```
