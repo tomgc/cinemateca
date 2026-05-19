@@ -394,16 +394,18 @@ catalogo_final <- catalogo_final |> select(sort(names(catalogo_final)))
 # --- Guardar -----------------------------------------------------------------
 cli_h2("Guardando")
 
-ruta_json <- here::here("datos", "catalogo.json")
+ruta_json <- here::here("catalogo.json")
 write_atomic(
   function(p) catalogo_final |> toJSON(pretty = TRUE, na = "null") |> write_lines(p),
   ruta_json
 )
 cli_alert_success("JSON: {ruta_json}")
 
+# CSV intermedio para inspección local (no versionado). El JSON de la raíz
+# es el único source-of-truth canónico que consume la web.
 ruta_csv <- here::here("datos", "catalogo_enriquecido.csv")
 write_atomic(function(p) write_csv(catalogo_final, p), ruta_csv)
-cli_alert_success("CSV: {ruta_csv}")
+cli_alert_success("CSV (local, gitignored): {ruta_csv}")
 
 cli_h2("Resumen")
 cli_alert_success("Total (sin duplicados): {nrow(catalogo_final)}")

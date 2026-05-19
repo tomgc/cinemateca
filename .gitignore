@@ -1,6 +1,12 @@
 .DS_Store
 **/.DS_Store
 
-# Cache local de respuestas TMDb del script enriquecimiento.R
+# Cache local de respuestas TMDb del script enriquecimiento.R.
 # Regenerable; primer run después de clonar hace más llamadas a API.
 datos/tmdb_cache.json
+
+# Outputs locales del flujo R. El catalogo.json canónico vive en la raíz
+# (servido a GitHub Pages y editado desde la web). datos/ es solo workspace
+# local para inspección.
+datos/catalogo.json
+datos/catalogo_enriquecido.csv

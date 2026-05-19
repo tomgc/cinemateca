@@ -4,15 +4,27 @@
 
 ```
 cinemateca/
-├── index.html          ← la plataforma web
-├── catalogo.json       ← los datos de tus películas
-├── escaneo.R           ← script de escaneo (no lo usa la web, pero lo guardas en el repo)
-├── enriquecimiento.R   ← script de enriquecimiento
+├── index.html              ← estructura HTML de la web
+├── style.css               ← estilos
+├── app.js                  ← lógica de la SPA
+├── catalogo.json           ← los datos de tus películas (raíz, lo lee la web)
+├── manifest.webmanifest    ← PWA manifest
+├── service-worker.js       ← offline + cache
+├── vendor/fuse.min.js      ← búsqueda fuzzy bundleada
+├── icons/                  ← iconos PWA y favicons
+├── escaneo.R               ← script de escaneo (corre local)
+├── enriquecimiento.R       ← script de enriquecimiento con TMDb
 ├── datos/
 │   ├── correcciones_manuales.csv
 │   ├── inventario_crudo.csv
-│   └── catalogo_enriquecido.csv
-└── README.md
+│   ├── catalogo_enriquecido.csv (gitignored, regenerable)
+│   └── tmdb_cache.json (gitignored, regenerable)
+├── tools/
+│   ├── refetch_posters_en.mjs
+│   └── validate_catalog.mjs
+└── .github/workflows/
+    ├── refetch-posters.yml
+    └── validate.yml
 ```
 
 ## Pasos para subir
@@ -59,16 +71,23 @@ Cuando escanees nuevos discos o hagas cambios en la web:
 ```bash
 # Opción A: Re-escaneo completo (nuevos discos)
 # 1. Correr escaneo.R → enriquecimiento.R en Positron
-# 2. Copiar el nuevo catalogo.json al repo
-cp ~/Desktop/datos/catalogo.json ~/Desktop/cinemateca/
+#    enriquecimiento.R escribe directo a catalogo.json en la raíz del repo
+#    y preserva los campos editados desde web (rating_personal,
+#    fecha_visionado, partner_wants, películas agregadas manualmente).
+# 2. Commitear y pushear
 cd ~/Desktop/cinemateca
 git add catalogo.json
 git commit -m "Actualizar catálogo"
 git push
 
 # Opción B: Cambios desde la web (estado, ocultar, agregar manual)
-# 1. En la web, click "Exportar JSON" → descarga catalogo.json
-# 2. Reemplazar en el repo
+# Opción B.1: Sync directo (requiere PAT configurado en Settings)
+#   - Hacer cambios → Exportar → Sincronizar a GitHub
+#   - El commit aparece solo en main; Pages despliega en 1-2 min.
+#
+# Opción B.2: Descarga manual (fallback si no usas el sync)
+# 1. Click "Exportar JSON" → "Descargar JSON"
+# 2. Reemplazar el archivo en el repo
 mv ~/Downloads/catalogo.json ~/Desktop/cinemateca/
 cd ~/Desktop/cinemateca
 git add catalogo.json
@@ -78,7 +97,8 @@ git push
 
 ## Notas
 
-- El `catalogo.json` debe estar en la **raíz** del repo, al lado de `index.html`
-- Los cambios que hagas en la web (estado, ocultar, agregar) se guardan en localStorage
-- Para hacerlos permanentes, usa "Exportar JSON" y sube el archivo al repo
-- Si limpias el caché del navegador, los cambios no exportados se pierden
+- El `catalogo.json` debe estar en la **raíz** del repo, al lado de `index.html`.
+- Los cambios desde la web se guardan en `localStorage` y se materializan
+  con "Exportar JSON" (descarga manual) o "Sincronizar a GitHub" (sync directo).
+- Si limpias el caché del navegador antes de exportar/sincronizar, los
+  cambios no persistidos se pierden.

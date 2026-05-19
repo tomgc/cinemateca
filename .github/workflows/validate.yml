@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 jobs:
-  validate:
+  validate-web:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,14 +14,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-
-      - name: Validate catalogo.json
-        run: |
-          node -e "
-            const c = JSON.parse(require('fs').readFileSync('catalogo.json','utf8'));
-            if (!Array.isArray(c)) throw new Error('catalogo.json no es un array');
-            console.log('catalogo.json OK: ' + c.length + ' entradas');
-          "
 
       - name: Validate app.js syntax
         run: node --check app.js
@@ -31,3 +23,21 @@ jobs:
 
       - name: Validate manifest.webmanifest
         run: node -e "JSON.parse(require('fs').readFileSync('manifest.webmanifest','utf8'));console.log('manifest OK')"
+
+      - name: Validate catalog schema
+        run: node tools/validate_catalog.mjs
+
+  validate-r:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - name: Parse escaneo.R
+        run: Rscript -e "invisible(parse(file='escaneo.R')); cat('escaneo.R OK\n')"
+
+      - name: Parse enriquecimiento.R
+        run: Rscript -e "invisible(parse(file='enriquecimiento.R')); cat('enriquecimiento.R OK\n')"

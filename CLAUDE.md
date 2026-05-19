@@ -80,16 +80,20 @@ URL: https://tomgc.github.io/cinemateca/
 
 ## Comportamiento del flujo R
 
-- `enriquecimiento.R` **preserva** los campos `rating_personal`,
-  `fecha_visionado`, `partner_wants` y las películas agregadas vía web
-  (haciendo merge con el `catalogo.json` en raíz antes de escribir el
-  nuevo `datos/catalogo.json`). Esto evita perder data del usuario al
-  regenerar desde inventario.
+- `enriquecimiento.R` escribe **directamente** a `catalogo.json` en la
+  raíz del repo (no más copia manual desde `datos/`). Ese es el único
+  source-of-truth canónico que consume la web.
+- Antes de escribir, hace **merge** con el catálogo existente para
+  preservar los campos editados desde la web (`rating_personal`,
+  `fecha_visionado`, `partner_wants`) y las películas agregadas
+  manualmente que no están en `inventario_crudo.csv`.
 - Las columnas del JSON salen alfabéticamente ordenadas para que los
   diffs de git muestren solo cambios reales.
 - Escritura atómica (write → rename) para `catalogo.json`,
   `catalogo_enriquecido.csv` y `tmdb_cache.json`. Si la ejecución se
   interrumpe, los archivos quedan en su estado previo, no corruptos.
+- `datos/catalogo_enriquecido.csv` y `datos/tmdb_cache.json` son outputs
+  locales gitignored. Regenerables corriendo R desde cero.
 
 ## Desviaciones declaradas de los principios de desarrollo
 
