@@ -1,0 +1,38 @@
+name: Build movie stubs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "catalogo.json"
+      - "tools/generate_movie_stubs.mjs"
+      - ".github/workflows/build-movie-stubs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Generate stubs
+        run: node tools/generate_movie_stubs.mjs
+
+      - name: Commit
+        run: |
+          if git diff --quiet -- movie/; then
+            echo "No stub changes"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add movie/
+          git commit -m "Rebuild movie stubs"
+          git push
