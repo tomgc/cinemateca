@@ -210,11 +210,20 @@ if (nrow(inventario) > 0) {
   write_csv_atomic(inventario, ruta_salida)
   cli::cli_alert_success("Guardado en: {ruta_salida}")
 
-  # Backup con fecha
+  # Backup con fecha + retention (mantener los últimos 5)
   write_csv_atomic(
     inventario,
     here::here("datos", paste0("inventario_crudo_", format(Sys.Date(), "%Y%m%d"), ".csv"))
   )
+  backups <- sort(
+    list.files(here::here("datos"), pattern = "^inventario_crudo_\\d{8}\\.csv$", full.names = TRUE),
+    decreasing = TRUE
+  )
+  if (length(backups) > 5) {
+    n_eliminados <- length(backups) - 5
+    file.remove(backups[6:length(backups)])
+    cli::cli_alert_info("Backups antiguos eliminados: {n_eliminados}")
+  }
 } else {
   cli::cli_alert_danger("No se encontraron archivos.")
 }

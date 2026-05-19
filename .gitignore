@@ -10,3 +10,7 @@ datos/tmdb_cache.json
 # local para inspección.
 datos/catalogo.json
 datos/catalogo_enriquecido.csv
+
+# Backups con fecha del inventario crudo (escaneo.R guarda hasta 5 localmente).
+# El inventario_crudo.csv "actual" (sin fecha) sí va trackeado.
+datos/inventario_crudo_*.csv

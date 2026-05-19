@@ -121,6 +121,7 @@
 .mystars:hover span{color:var(--accent-dim)}
 .mystars span:hover ~ span{color:var(--text-muted)}
 .cp .myr{position:absolute;bottom:.5rem;right:.5rem;background:rgba(10,10,12,.85);color:var(--accent);padding:.1rem .35rem;border-radius:3px;font-size:.7rem;font-weight:500;backdrop-filter:blur(4px)}
+mark{background:rgba(201,168,76,.35);color:var(--text);padding:0 .1em;border-radius:2px;font-weight:500}
 .stkc{background:var(--bg-filter);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;text-align:center}
 .stkc .stkn{font-size:1.8rem;font-weight:600;color:var(--accent);line-height:1}.stkc .stkl{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-top:.3rem}
 @media(max-width:768px){.header{padding:1.2rem 1rem 1rem}.fp{padding:1rem}.sortbar{padding:.6rem 1rem}.grid{padding:1rem;gap:1rem;grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}.af{padding:.5rem 1rem}.mb{grid-template-columns:1fr;padding:0 1.2rem 1.5rem;margin-top:-60px}.mp{width:120px}.mcnt{padding-top:0}.mtit{font-size:1.3rem}.logo{font-size:1.3rem}.moodp{padding:1.5rem}.ub{padding:.8rem 1rem}}
